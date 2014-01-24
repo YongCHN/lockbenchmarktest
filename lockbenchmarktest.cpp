@@ -19,7 +19,7 @@ public:
 	void Stop();
 	void Pause();
 	void Resume();
-	int ElapseTime(){
+	long long ElapseTime(){
 		return m_total;
 	}
 private:
@@ -57,17 +57,17 @@ void Timer::Sum()
 {
 	m_total += (((m_liPerfCurrent.QuadPart - m_liPerfLast.QuadPart) * 1000) / m_liPerfFreq.QuadPart);
 }
-//template<typename T>
+template<typename T>
 class Lock
 {
 public:
-	void lock_shared(){}
-	void lock_exclusive(){}
-	void release_shared(){}
-	void release_exclusive(){}
+	void lock_shared(){ _lock.AcquireReadLock(); }
+	void lock_exclusive(){ _lock.AcquireWriteLock(); }
+	void release_shared(){ _lock.ReleaseReadLock(); }
+	void release_exclusive(){ _lock.ReleaseWriteLock(); }
 
 private:
-	//T _lock;
+	T _lock;
 };
 void  writer(void * arg);
 void  reader(void * arg);
@@ -78,10 +78,17 @@ void spoon(threadentry_t function, int count);
 void close();
 HANDLE * g_handles;
 int g_number;
-const static int elementToProcess = 100000 * 100;
-Lock g_lock;
+const static int elementToProcess = 100000 * 10;
+
+class CLock
+{
+
+};
+Lock<CLock> g_lock;
 
 queue<int> g_container;
+int * g_buffer = new int[1024];
+
 int _tmain(int argc, _TCHAR* argv[])
 {
 	if (argc < 3)
@@ -96,50 +103,52 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	g_handles = new HANDLE[readercount + writerCount];
 
+	Timer timer;
+	timer.Start();
 	spoon(writer, writerCount);
 	
 	spoon(reader, readercount);
 
 	::WaitForMultipleObjects(readercount + writerCount, g_handles, TRUE, INFINITE);
-
-	
+	timer.Stop();
+	printf("totally;%d;\r\n", timer.ElapseTime());
+	Close();
 	return 0;
 }
 
 void  writer(void * arg)
 {
-	Timer timer;
-	timer.Start();
+	int threadindex = (int)*(int*)arg;
+	
 	for (int i = 0; i < elementToProcess; i++)
 	{
-		g_lock.lock_shared();
-		g_container.push(i);
-		g_lock.release_shared();
+		g_lock.lock_exclusive();
+		g_buffer[0] = i;
+		g_lock.release_exclusive();
 	}
-	timer.Stop();
-	printf("use %d miniseconds in writer", timer.ElapseTime());
 }
 
 void  reader(void * arg)
 {
-	Timer timer;
-	timer.Start();
-
+	int threadindex = (int)*(int*)arg;
+	
+	int localNumber;
 	for (int i = 0; i < elementToProcess; i++)
 	{
 		g_lock.lock_shared();
-		g_container.front();
-		g_lock.release_shared();		
+		localNumber = g_buffer[0];
+		g_lock.release_shared();
 	}
-	timer.Stop();
-	printf("use %d miniseconds in reader", timer.ElapseTime());
+	localNumber++;
 }
 
 void spoon(threadentry_t function, int count)
 {
 	for (int i = 0; i < count; i++)
 	{
-		g_handles[g_number++] = (HANDLE)_beginthread(function, 0, nullptr);
+		int threadId = g_number;
+		g_handles[g_number] = (HANDLE)_beginthread(function, 0, (void*)&threadId);
+		g_number++;
 	}
 }
 
